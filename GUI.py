@@ -12,17 +12,24 @@ from sys import argv,exit
 from pyaudio import PyAudio
 from cStringIO import StringIO
 from time import sleep
+from ctypes import c_bool
 
-import msvcrt 
+# import msvcrt 
 
 from numpy.fft import fft
 from numpy import angle#,blackman
+
+from multiprocessing import Value, Lock, Process
+
+playing=Value(c_bool)
+playing.value=False
+# print playing.value
 
 def init1():
 	global bufsize, wf, p, data, stream,ang,volume,Playing,Running
 	Playing=False
 	Running=True
-	volume=0.8
+	volume=1.0
 	ang=0
 	bufsize = 4096
 	# bmw=blackman(bufsize)
@@ -49,7 +56,7 @@ def loadfile(file):
 		output = True)
 
 def play():
-	global ang,data,maxarray,phaarray
+	global ang,data,maxarray,phaarray,wf
 	L=[0]*bufsize#for store L ch samples
 	Lw=[0]*bufsize#windowed version of L
 	R=[0]*bufsize
@@ -62,25 +69,34 @@ def play():
 	ang=(ang+0)%360
 	# print ang
 	data = wf.readframes(bufsize)
+	
+	if data =='':
 		
+		wf.setpos(50)
+		print str(wf)
+	
 	#unpack le data
 	if 	wf.getnchannels() ==1: #upscale mono to stereo
-		for i in range(0,bufsize):
-			dataarray[i*2:]=unpack('h',data[(i*2):((i*2)+2)])
-			dataarray[i*2+1:]=unpack('h',data[(i*2):((i*2)+2)])
-			dataarray[i*2]=dataarray[i*2]*0.707*volume #0.707 is needed to achieve same volume of 1ch played through 2ch
-			dataarray[i*2+1]=dataarray[i*2+1]*0.707*volume #which is half the sqrt of two
-			
+		try: 
+			for i in range(0,bufsize):
+				dataarray[i*2:]=unpack('h',data[(i*2):((i*2)+2)])
+				dataarray[i*2+1:]=unpack('h',data[(i*2):((i*2)+2)])
+				dataarray[i*2]=dataarray[i*2]*0.707*volume #0.707 is needed to achieve same volume of 1ch played through 2ch
+				dataarray[i*2+1]=dataarray[i*2+1]*0.707*volume #which is half the sqrt of two
+		except:
+			pass
 	else:#unpack stereo data into separate arrays of Left & right
-		for i in xrange(0,bufsize*2):
-			if(i%2==0):
-				L[i/2]=unpack('h',data[(i*2):((i*2)+2)])[0]*volume #[0] is needed because for some reason unpack returns a tuple
-				
-			else:
-				R[i/2]=unpack('h',data[(i*2):((i*2)+2)])[0]*volume #else use the : operator as with mono, but makes an empty array then adds elements to it, which mite b bad 4 preformance
-				# maxarray[i/2]=max(L[i/2],R[i/2])*(1-((fabs(4095.5-i))/4095.5))#apply triangle window
-				# maxarray[i/2]=max(L[i/2],R[i/2])*bmw[i/2]#apply blackmann window
-				
+		try:
+			for i in xrange(0,bufsize*2):
+				if(i%2==0):
+					L[i/2]=unpack('h',data[(i*2):((i*2)+2)])[0]*volume #[0] is needed because for some reason unpack returns a tuple
+					
+				else:
+					R[i/2]=unpack('h',data[(i*2):((i*2)+2)])[0]*volume #else use the : operator as with mono, but makes an empty array then adds elements to it, which mite b bad 4 preformance
+					# maxarray[i/2]=max(L[i/2],R[i/2])*(1-((fabs(4095.5-i))/4095.5))#apply triangle window
+					# maxarray[i/2]=max(L[i/2],R[i/2])*bmw[i/2]#apply blackmann window
+		except:
+			pass
 			
 	for i in xrange(0,bufsize): #perform stereo field rotation, uses 2% cpu
 		L_temp=L[i]*cos(radians(ang))-R[i]*sin(radians(ang))
@@ -125,9 +141,11 @@ class Example(QtGui.QMainWindow):
 	def end(self):
 		# super(Example, self).__init__()
 		global Running
-		self.close()
 		Running=False
+		self.close()
+		
 		# nActionMethod()
+	# def __init__(self):
 	
 	
 	def showDialog(self):
@@ -162,8 +180,9 @@ class Example(QtGui.QMainWindow):
 		print l
 		loadfile(str(l[0]))
 	
+
+	
 	def initUI(self):
-		
 		print "6"
 		self.statusBar()
 		# textEdit = QtGui.QTextEdit()
@@ -197,14 +216,14 @@ class Example(QtGui.QMainWindow):
 		volslider.setTickInterval(10)
 		volslider.setTickPosition(volslider.TicksBelow)
 		volslider.setStatusTip("volume slider")
-		# volslider.sizeHint=QtCore.QSize(600, 150)
-		# volslider.minimumSizeHint=QtCore.QSize(100,1)
-		# volslider.setSizePolicy(QtGui.QSizePolicy.Fixed,QtGui.QSizePolicy.Fixed)
-		volslider.setSizePolicy(QtGui.QSizePolicy.Minimum,QtGui.QSizePolicy.Fixed)
+		volslider.setRange(0,100)
+		volslider.setValue(100)
+		volslider.valueChanged.connect(self.setVolume)
+		volslider.setSizePolicy(QtGui.QSizePolicy.Fixed,QtGui.QSizePolicy.Fixed)
 
-		 
 		seekbar = QtGui.QSlider(QtCore.Qt.Horizontal)
 		seekbar.setStatusTip("seekbar")
+		# volslider.sizeHint=QtCore.QSize(600, 150)
 		# seekbar.minimumSizeHint=QtCore.QSize(100,1)
 		# seekbar.setMinimumSize(QtCore.QSize(100,1))
 		
@@ -238,6 +257,12 @@ class Example(QtGui.QMainWindow):
 		self.setGeometry(300, 300, 600, 250)
 		self.setWindowTitle('Main window')	
 		self.show()
+	
+	def setVolume(self):
+		global volume
+		sender = self.sender()
+		volume= (float(sender.value()) / 100.0)
+		print volume
 	print "7"
 		
 
@@ -260,11 +285,12 @@ def main():
 		if(Playing):
 			play()
 		else:
-			sleep(0.01)#how often it respond to keyboard hits, as a result of this constructs
+			sleep(0.01)
 			continue
 	print "4"
-	exit(0)
 	# sys.exit(app.exec_())
+	exit(0)
+	
 
 
 if __name__ == '__main__':
