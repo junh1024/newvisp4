@@ -3,17 +3,17 @@
 # http://stackoverflow.com/questions/4151637/pyqt4-drag-and-drop-files-into-qlistwidget
 
 import sys
-from PyQt4 import QtGui, QtCore
+from PyQt4 import QtGui, QtCore,Qt
 
-import decoder
+import decoder, random
 from struct import pack, unpack
-from math import sin,cos,radians,log,fabs
+from math import sin,cos,radians,log10
 from sys import argv,exit
 from pyaudio import PyAudio
 from cStringIO import StringIO
 from time import sleep
 from ctypes import c_bool
-
+# from mytest2 import play
 # import msvcrt 
 
 from numpy.fft import fft
@@ -56,47 +56,39 @@ def loadfile(file):
 		output = True)
 
 def play():
-	global ang,data,maxarray,phaarray,wf
+	global ang,data,maxarray,phaarray
 	L=[0]*bufsize#for store L ch samples
 	Lw=[0]*bufsize#windowed version of L
 	R=[0]*bufsize
 	Rw=[0]*bufsize
 	phaarray=[0]*(bufsize/2)#for store phase
 	maxarray=[0]*(bufsize/2)#for store ampli
+	prevmaxarray=[0]*(bufsize/2)#for store ampli
 	L_temp=0
 	R_temp=0
 
 	ang=(ang+0)%360
 	# print ang
 	data = wf.readframes(bufsize)
-	
-	if data =='':
 		
-		wf.setpos(50)
-		print str(wf)
-	
 	#unpack le data
 	if 	wf.getnchannels() ==1: #upscale mono to stereo
-		try: 
-			for i in range(0,bufsize):
-				dataarray[i*2:]=unpack('h',data[(i*2):((i*2)+2)])
-				dataarray[i*2+1:]=unpack('h',data[(i*2):((i*2)+2)])
-				dataarray[i*2]=dataarray[i*2]*0.707*volume #0.707 is needed to achieve same volume of 1ch played through 2ch
-				dataarray[i*2+1]=dataarray[i*2+1]*0.707*volume #which is half the sqrt of two
-		except:
-			pass
+		for i in range(0,bufsize):
+			dataarray[i*2:]=unpack('h',data[(i*2):((i*2)+2)])
+			dataarray[i*2+1:]=unpack('h',data[(i*2):((i*2)+2)])
+			dataarray[i*2]=dataarray[i*2]*0.707*volume #0.707 is needed to achieve same volume of 1ch played through 2ch
+			dataarray[i*2+1]=dataarray[i*2+1]*0.707*volume #which is half the sqrt of two
+			
 	else:#unpack stereo data into separate arrays of Left & right
-		try:
-			for i in xrange(0,bufsize*2):
-				if(i%2==0):
-					L[i/2]=unpack('h',data[(i*2):((i*2)+2)])[0]*volume #[0] is needed because for some reason unpack returns a tuple
-					
-				else:
-					R[i/2]=unpack('h',data[(i*2):((i*2)+2)])[0]*volume #else use the : operator as with mono, but makes an empty array then adds elements to it, which mite b bad 4 preformance
-					# maxarray[i/2]=max(L[i/2],R[i/2])*(1-((fabs(4095.5-i))/4095.5))#apply triangle window
-					# maxarray[i/2]=max(L[i/2],R[i/2])*bmw[i/2]#apply blackmann window
-		except:
-			pass
+		for i in xrange(0,bufsize*2):
+			if(i%2==0):
+				L[i/2]=unpack('h',data[(i*2):((i*2)+2)])[0]*volume #[0] is needed because for some reason unpack returns a tuple
+				
+			else:
+				R[i/2]=unpack('h',data[(i*2):((i*2)+2)])[0]*volume #else use the : operator as with mono, but makes an empty array then adds elements to it, which mite b bad 4 preformance
+				# maxarray[i/2]=max(L[i/2],R[i/2])*(1-((fabs(4095.5-i))/4095.5))#apply triangle window
+				# maxarray[i/2]=max(L[i/2],R[i/2])*bmw[i/2]#apply blackmann window
+				
 			
 	for i in xrange(0,bufsize): #perform stereo field rotation, uses 2% cpu
 		L_temp=L[i]*cos(radians(ang))-R[i]*sin(radians(ang))
@@ -106,8 +98,8 @@ def play():
 	
 	
 	for i in xrange(0,bufsize):
-		Lw[i]=L[i]*(1-((fabs((bufsize/2)-0.5-i))/((bufsize/2)-0.5)))#apply triangle window
-		Rw[i]=R[i]*(1-((fabs((bufsize/2)-0.5-i))/((bufsize/2)-0.5)))
+		Lw[i]=L[i]*(1-((abs((bufsize/2)-0.5-i))/((bufsize/2)-0.5)))#apply triangle window
+		Rw[i]=R[i]*(1-((abs((bufsize/2)-0.5-i))/((bufsize/2)-0.5)))
 	# outfft=fft(maxarray)
 	
 	Lfft=fft(Lw)#compute FFT of windowed samples
@@ -116,8 +108,15 @@ def play():
 	Rpha=angle(Rfft)
 	
 	for i in xrange(0,bufsize/2):
-		phaarray[i]=fabs(Lpha[i]-Rpha[i])#compute phase difference
-		maxarray[i]=max ( (Lfft[i].real), (Rfft[i].real) )#get the maximum of two channels' FFT
+		phaarray[i]=abs(Lpha[i]-Rpha[i])#compute phase difference
+		temp=max ( abs(Lfft[i].real), abs(Rfft[i].real) ) #get the maximum of two channels' FFT
+		temp=10*log10(temp/float(bufsize)) +40#scale by the number of points so that the magnitude does not depend on the length of FFT, he power in decibels by taking 10*log10, +40 so shouldn't be -ve values at 16bit
+		if temp<(prevmaxarray[i]-1): #ballistics
+			maxarray[i]=prevmaxarray[i]-1
+		else:
+			maxarray[i]=temp
+		prevmaxarray[i]=maxarray[i]
+		
 
 	file_str = StringIO()
 	
@@ -130,6 +129,32 @@ def play():
 			
 	data=file_str.getvalue()
 	stream.write(data)#plays the data
+
+	
+class SpectrumWidget(QtGui.QWidget):
+	def paintEvent(self, e):
+		qp = QtGui.QPainter()
+		qp.begin(self)
+		self.drawBackground(qp)
+		# self.drawLines(qp)
+		qp.end()
+		print 'repainted'
+
+
+	def drawBackground(self, qp):
+		size = self.size()
+		w = size.width()
+		h = size.height()
+		
+		backgroundrect=QtCore.QRect(0,0,w,h)
+		qp.setBrush(QtCore.Qt.SolidPattern)
+		qp.drawRect(backgroundrect)
+		
+		
+	def drawLines(self, qp):
+		size = self.size()
+		w = size.width()
+		h = size.height()
 
 class Example(QtGui.QMainWindow):
 	
@@ -186,8 +211,18 @@ class Example(QtGui.QMainWindow):
 		print "6"
 		self.statusBar()
 		# textEdit = QtGui.QTextEdit()
-		# self.setCentralWidget(textEdit)
-		awidget=QtGui.QWidget()
+		
+		# graph=QtGui.QWidget()
+		# qp = QtGui.QPainter()
+		# qp.begin(graph)
+		# qp.drawPoint(1,1)
+		# qp.end()
+		# vbox= QtGui.QVBoxLayout()
+		# vbox.addWidget(graph)
+		
+		
+		# self.setLayout(vbox)
+		awidget=SpectrumWidget()
 		self.setCentralWidget(awidget)
 		awidget.setAcceptDrops(True)
 		self.setAcceptDrops(True)
@@ -231,8 +266,15 @@ class Example(QtGui.QMainWindow):
 		exitAction.setShortcut('Ctrl+Q')
 		exitAction.setStatusTip('Exit application')
 		exitAction.triggered.connect(self.end)
+		
 		toolbar = self.addToolBar('ponies')
 		toolbar.setMovable(False)
+		
+		self.toolbar2=QtGui.QToolBar('fish',self)
+		self.addToolBar(QtCore.Qt.BottomToolBarArea,self.toolbar2)
+		self.toolbar2.setMovable(False)
+		# toolbar2.setAllowedAreas(QtCore.Qt.BottomToolBarArea)
+		# toolbar2.addSeparator ()
 		
 		toolbar.addAction(nAction)
 		toolbar.addAction(openAction)
@@ -258,6 +300,25 @@ class Example(QtGui.QMainWindow):
 		self.setWindowTitle('Main window')	
 		self.show()
 	
+	def paintEvent(self, e):
+
+		qp = QtGui.QPainter()
+		qp.begin(self)
+		# self.drawPoints(qp)
+		qp.end()
+		
+		# print int(self.height())
+		
+	# def drawPoints(self, qp):
+	  
+		# qp.setPen(QtCore.Qt.red)
+		# size = self.size()
+		
+		# for i in range(1000):
+			# x = random.randint(1, size.width()-1)
+			# y = random.randint(1, size.height()-1)
+			# qp.drawPoint(x, y)
+	
 	def setVolume(self):
 		global volume
 		sender = self.sender()
@@ -265,6 +326,7 @@ class Example(QtGui.QMainWindow):
 		print volume
 	print "7"
 		
+
 
 def nActionMethod():
 	print "nanoha!"
@@ -280,9 +342,11 @@ def main():
 	app = QtGui.QApplication(sys.argv)
 	print "2"
 	ex = Example()
+	qcw=ex.centralWidget()
 	while(Running):
 		app.processEvents()
 		if(Playing):
+			qcw.repaint()
 			play()
 		else:
 			sleep(0.01)
