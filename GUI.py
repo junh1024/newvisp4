@@ -1,11 +1,11 @@
-﻿# http://doc.qt.nokia.com/4.7-snapshot/coordsys.html
-# http://rowinggolfer.blogspot.co.nz/2009/01/implimenting-custom-widget-using-pyqt4.html
+﻿# http://rowinggolfer.blogspot.co.nz/2009/01/implimenting-custom-widget-using-pyqt4.html
 # http://stackoverflow.com/questions/4151637/pyqt4-drag-and-drop-files-into-qlistwidget
+# http://www.qsl.net/d/dl4yhf/speclab/specdisp.htm
 
-import sys
 from PyQt4 import QtGui, QtCore,Qt
 
-import decoder, random
+import decoder
+import psyco
 from struct import pack, unpack
 from math import sin,cos,radians,log10
 from sys import argv,exit
@@ -14,7 +14,6 @@ from cStringIO import StringIO
 from time import sleep
 from ctypes import c_bool
 # from mytest2 import play
-# import msvcrt 
 
 from numpy.fft import fft
 from numpy import angle#,blackman
@@ -25,13 +24,20 @@ playing=Value(c_bool)
 playing.value=False
 # print playing.value
 
+psyco.full()
+
 def init1():
-	global bufsize, wf, p, data, stream,ang,volume,Playing,Running
+	global bufsize, wf, p, data, stream,ang,volume,Playing,Running,length,maxarray,phaarray,prevmaxarray
+
 	Playing=False
 	Running=True
 	volume=1.0
 	ang=0
-	bufsize = 4096
+	bufsize = 2048
+	length=bufsize
+	phaarray=[0]*(bufsize/2)#for store phase
+	maxarray=[0]*(bufsize/2)#for store ampli
+	prevmaxarray=[0]*(bufsize/2)#for store ampli
 	# bmw=blackman(bufsize)
 	p = PyAudio() #make a pyaudio
 
@@ -56,14 +62,14 @@ def loadfile(file):
 		output = True)
 
 def play():
-	global ang,data,maxarray,phaarray
+	global ang,data,maxarray,phaarray,length,bufsize,prevmaxarray
+	
 	L=[0]*bufsize#for store L ch samples
 	Lw=[0]*bufsize#windowed version of L
 	R=[0]*bufsize
 	Rw=[0]*bufsize
-	phaarray=[0]*(bufsize/2)#for store phase
-	maxarray=[0]*(bufsize/2)#for store ampli
-	prevmaxarray=[0]*(bufsize/2)#for store ampli
+
+	
 	L_temp=0
 	R_temp=0
 
@@ -86,7 +92,6 @@ def play():
 				
 			else:
 				R[i/2]=unpack('h',data[(i*2):((i*2)+2)])[0]*volume #else use the : operator as with mono, but makes an empty array then adds elements to it, which mite b bad 4 preformance
-				# maxarray[i/2]=max(L[i/2],R[i/2])*(1-((fabs(4095.5-i))/4095.5))#apply triangle window
 				# maxarray[i/2]=max(L[i/2],R[i/2])*bmw[i/2]#apply blackmann window
 				
 			
@@ -111,11 +116,21 @@ def play():
 		phaarray[i]=abs(Lpha[i]-Rpha[i])#compute phase difference
 		temp=max ( abs(Lfft[i].real), abs(Rfft[i].real) ) #get the maximum of two channels' FFT
 		temp=10*log10(temp/float(bufsize)) +40#scale by the number of points so that the magnitude does not depend on the length of FFT, he power in decibels by taking 10*log10, +40 so shouldn't be -ve values at 16bit
-		if temp<(prevmaxarray[i]-1): #ballistics
+		
+		if temp<(prevmaxarray[i]-1): #fixed-decay ballistics
 			maxarray[i]=prevmaxarray[i]-1
 		else:
 			maxarray[i]=temp
-		prevmaxarray[i]=maxarray[i]
+		
+		# if temp<(prevmaxarray[i]): #infinite maximum ballistics
+			# maxarray[i]=prevmaxarray[i]
+		# else:
+			# maxarray[i]=temp
+		
+		prevmaxarray[i]=maxarray[i] #both ballistics above need this line
+		
+		# maxarray[i]=(prevmaxarray[i]+temp)/2 #average with 1ref ballistics
+		# prevmaxarray[i]=temp
 		
 
 	file_str = StringIO()
@@ -136,10 +151,8 @@ class SpectrumWidget(QtGui.QWidget):
 		qp = QtGui.QPainter()
 		qp.begin(self)
 		self.drawBackground(qp)
-		# self.drawLines(qp)
+		self.drawLines(qp)
 		qp.end()
-		print 'repainted'
-
 
 	def drawBackground(self, qp):
 		size = self.size()
@@ -152,9 +165,21 @@ class SpectrumWidget(QtGui.QWidget):
 		
 		
 	def drawLines(self, qp):
+		global maxarray,length
+		somegreen=QtGui.QColor(150,200,100)
+		apen=QtGui.QPen()
+		apen.setColor(somegreen)
+		apen.setWidth(1)
+		qp.setPen(apen)
 		size = self.size()
-		w = size.width()
-		h = size.height()
+		w = float(size.width())
+		h = float(size.height())
+
+		for i in xrange(0,length/2):
+			x=float(i)
+			p1=QtCore.QPointF((x/(length/2))*w,h)
+			p2=QtCore.QPointF((x/(length/2))*w,h-(maxarray[i]/80)*h)
+			qp.drawLine(p1,p2)
 
 class Example(QtGui.QMainWindow):
 	
@@ -164,14 +189,9 @@ class Example(QtGui.QMainWindow):
 		self.initUI()
 		
 	def end(self):
-		# super(Example, self).__init__()
 		global Running
 		Running=False
 		self.close()
-		
-		# nActionMethod()
-	# def __init__(self):
-	
 	
 	def showDialog(self):
 		
@@ -179,7 +199,7 @@ class Example(QtGui.QMainWindow):
 		
 		print fname
 		loadfile(str(fname))
-		
+	
 	def dragEnterEvent(self, event):
 		if event.mimeData().hasUrls:
 			event.accept()
@@ -210,17 +230,9 @@ class Example(QtGui.QMainWindow):
 	def initUI(self):
 		print "6"
 		self.statusBar()
-		# textEdit = QtGui.QTextEdit()
-		
-		# graph=QtGui.QWidget()
-		# qp = QtGui.QPainter()
-		# qp.begin(graph)
-		# qp.drawPoint(1,1)
-		# qp.end()
+
 		# vbox= QtGui.QVBoxLayout()
 		# vbox.addWidget(graph)
-		
-		
 		# self.setLayout(vbox)
 		awidget=SpectrumWidget()
 		self.setCentralWidget(awidget)
@@ -296,28 +308,9 @@ class Example(QtGui.QMainWindow):
 		fileMenu.addAction(openAction)
 		fileMenu.addAction(exitAction)
 		
-		self.setGeometry(300, 300, 600, 250)
+		self.setGeometry(300, 300, 800, 500)
 		self.setWindowTitle('Main window')	
 		self.show()
-	
-	def paintEvent(self, e):
-
-		qp = QtGui.QPainter()
-		qp.begin(self)
-		# self.drawPoints(qp)
-		qp.end()
-		
-		# print int(self.height())
-		
-	# def drawPoints(self, qp):
-	  
-		# qp.setPen(QtCore.Qt.red)
-		# size = self.size()
-		
-		# for i in range(1000):
-			# x = random.randint(1, size.width()-1)
-			# y = random.randint(1, size.height()-1)
-			# qp.drawPoint(x, y)
 	
 	def setVolume(self):
 		global volume
@@ -334,12 +327,11 @@ def nActionMethod():
 def playActionMethod():
 	global Playing
 	Playing=not Playing
-	print Playing
 
 def main():
 	init1()
 	print "1"
-	app = QtGui.QApplication(sys.argv)
+	app = QtGui.QApplication(argv)
 	print "2"
 	ex = Example()
 	qcw=ex.centralWidget()
@@ -352,7 +344,7 @@ def main():
 			sleep(0.01)
 			continue
 	print "4"
-	# sys.exit(app.exec_())
+	# exit(app.exec_())
 	exit(0)
 	
 
