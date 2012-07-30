@@ -1,4 +1,5 @@
-﻿# http://rowinggolfer.blogspot.co.nz/2009/01/implimenting-custom-widget-using-pyqt4.html
+﻿# http://www.qtcentre.org/threads/41621-Resetting-a-QSlider-with-double-click
+# http://rowinggolfer.blogspot.co.nz/2009/01/implimenting-custom-widget-using-pyqt4.html
 # http://stackoverflow.com/questions/4151637/pyqt4-drag-and-drop-files-into-qlistwidget
 # http://www.qsl.net/d/dl4yhf/speclab/specdisp.htm
 
@@ -7,7 +8,7 @@ from PyQt4 import QtGui, QtCore,Qt
 import decoder
 import psyco
 from struct import pack, unpack
-from math import sin,cos,radians,log10
+from math import sin,cos,radians,log10,pow
 from sys import argv,exit
 from pyaudio import PyAudio
 from cStringIO import StringIO
@@ -27,14 +28,16 @@ playing.value=False
 psyco.full()
 
 def init1():
-	global bufsize, wf, p, data, stream,ang,volume,Playing,Running,length,maxarray,phaarray,prevmaxarray
-
-	Playing=False
+	global bufsize, wf, p,  ang,volume,datalen,maxarray,phaarray,prevmaxarray
+	global Playing,Running,power
+	
+	power=1.0
+	Playing=useLogScale=False
 	Running=True
 	volume=1.0
 	ang=0
 	bufsize = 2048
-	length=bufsize
+	datalen=bufsize
 	phaarray=[0]*(bufsize/2)#for store phase
 	maxarray=[0]*(bufsize/2)#for store ampli
 	prevmaxarray=[0]*(bufsize/2)#for store ampli
@@ -46,9 +49,8 @@ def loadfile(file):
 	try:
 		stream.close() #close le stream
 		wf.close() #close le wave-like object
-		print "cleaned up"
 	except:
-		print "did not clean up"
+		pass
 	wf = decoder.open(file, "r") #create a read-onry wave-like obj
 	
 	if wf.getnchannels() >2:
@@ -62,13 +64,8 @@ def loadfile(file):
 		output = True)
 
 def play():
-	global ang,data,maxarray,phaarray,length,bufsize,prevmaxarray
+	global ang,data,maxarray,phaarray,datalen,bufsize,prevmaxarray
 	
-	L=[0]*bufsize#for store L ch samples
-	Lw=[0]*bufsize#windowed version of L
-	R=[0]*bufsize
-	Rw=[0]*bufsize
-
 	
 	L_temp=0
 	R_temp=0
@@ -76,17 +73,30 @@ def play():
 	ang=(ang+0)%360
 	# print ang
 	data = wf.readframes(bufsize)
-		
+	
+	if 	wf.getnchannels() ==1:
+		datalen= len(data)/2
+	else:
+		datalen= len(data)/4
+	# print datalen
+	
+	
+	L=[0]*datalen#for store L ch samples
+	Lw=[0]*datalen#windowed version of L
+	R=[0]*datalen
+	Rw=[0]*datalen
+	
 	#unpack le data
 	if 	wf.getnchannels() ==1: #upscale mono to stereo
-		for i in range(0,bufsize):
-			dataarray[i*2:]=unpack('h',data[(i*2):((i*2)+2)])
-			dataarray[i*2+1:]=unpack('h',data[(i*2):((i*2)+2)])
-			dataarray[i*2]=dataarray[i*2]*0.707*volume #0.707 is needed to achieve same volume of 1ch played through 2ch
-			dataarray[i*2+1]=dataarray[i*2+1]*0.707*volume #which is half the sqrt of two
+		for i in range(0,datalen/2):
+			# print i
+			L[i*2]=unpack('h',data[(i*2):((i*2)+2)])[0]
+			R[i*2+1]=unpack('h',data[(i*2):((i*2)+2)])[0]
+			L[i*2]=L[i*2]*0.707*volume #0.707 is needed to achieve same volume of 1ch played through 2ch
+			R[i*2+1]=R[i*2+1]*0.707*volume #which is half the sqrt of two
 			
 	else:#unpack stereo data into separate arrays of Left & right
-		for i in xrange(0,bufsize*2):
+		for i in xrange(0,datalen*2):
 			if(i%2==0):
 				L[i/2]=unpack('h',data[(i*2):((i*2)+2)])[0]*volume #[0] is needed because for some reason unpack returns a tuple
 				
@@ -95,16 +105,16 @@ def play():
 				# maxarray[i/2]=max(L[i/2],R[i/2])*bmw[i/2]#apply blackmann window
 				
 			
-	for i in xrange(0,bufsize): #perform stereo field rotation, uses 2% cpu
+	for i in xrange(0,datalen): #perform stereo field rotation, uses 2% cpu
 		L_temp=L[i]*cos(radians(ang))-R[i]*sin(radians(ang))
 		R_temp=L[i]*sin(radians(ang))+R[i]*cos(radians(ang))
 		L[i]=L_temp
 		R[i]=R_temp
 	
 	
-	for i in xrange(0,bufsize):
-		Lw[i]=L[i]*(1-((abs((bufsize/2)-0.5-i))/((bufsize/2)-0.5)))#apply triangle window
-		Rw[i]=R[i]*(1-((abs((bufsize/2)-0.5-i))/((bufsize/2)-0.5)))
+	for i in xrange(0,datalen):
+		Lw[i]=L[i]*(1-((abs((datalen/2)-0.5-i))/((datalen/2)-0.5)))#apply triangle window
+		Rw[i]=R[i]*(1-((abs((datalen/2)-0.5-i))/((datalen/2)-0.5)))
 	# outfft=fft(maxarray)
 	
 	Lfft=fft(Lw)#compute FFT of windowed samples
@@ -112,13 +122,13 @@ def play():
 	Rfft=fft(Rw)
 	Rpha=angle(Rfft)
 	
-	for i in xrange(0,bufsize/2):
+	for i in xrange(0,datalen/2):
 		phaarray[i]=abs(Lpha[i]-Rpha[i])#compute phase difference
 		temp=max ( abs(Lfft[i].real), abs(Rfft[i].real) ) #get the maximum of two channels' FFT
-		temp=10*log10(temp/float(bufsize)) +40#scale by the number of points so that the magnitude does not depend on the length of FFT, he power in decibels by taking 10*log10, +40 so shouldn't be -ve values at 16bit
+		temp=10*log10(temp/float(datalen)) +40#scale by the number of pointss so that the magnitude does not depend on the length of FFT, he power in decibels by taking 10*log10, +40 so shouldn't be -ve values at 16bit
 		
-		if temp<(prevmaxarray[i]-1): #fixed-decay ballistics
-			maxarray[i]=prevmaxarray[i]-1
+		if temp<(prevmaxarray[i]-1.2): #fixed-decay ballistics
+			maxarray[i]=prevmaxarray[i]-1.2
 		else:
 			maxarray[i]=temp
 		
@@ -136,7 +146,7 @@ def play():
 	file_str = StringIO()
 	
 	#repack le data from L&R ch
-	for i in xrange(0,bufsize*2):
+	for i in xrange(0,datalen*2):
 		if(i%2==0):
 			file_str.write(pack('h',L[i/2]))
 		else:
@@ -145,11 +155,18 @@ def play():
 	data=file_str.getvalue()
 	stream.write(data)#plays the data
 
+class ResettingSlider(QtGui.QSlider):
+	def setRSV(self,rsv):
+		self.resetvalue=rsv
 	
+	def mouseDoubleClickEvent(self, event):
+		self.setValue(self.resetvalue)
+
 class SpectrumWidget(QtGui.QWidget):
 	def paintEvent(self, e):
 		qp = QtGui.QPainter()
 		qp.begin(self)
+		# qp.setRenderHint(QtGui.QPainter.Antialiasing)
 		self.drawBackground(qp)
 		self.drawLines(qp)
 		qp.end()
@@ -165,21 +182,26 @@ class SpectrumWidget(QtGui.QWidget):
 		
 		
 	def drawLines(self, qp):
-		global maxarray,length
+		global maxarray,datalen,power
 		somegreen=QtGui.QColor(150,200,100)
 		apen=QtGui.QPen()
 		apen.setColor(somegreen)
-		apen.setWidth(1)
+		apen.setWidth(2)
 		qp.setPen(apen)
 		size = self.size()
 		w = float(size.width())
 		h = float(size.height())
 
-		for i in xrange(0,length/2):
+		for i in xrange(0,datalen/2):
 			x=float(i)
-			p1=QtCore.QPointF((x/(length/2))*w,h)
-			p2=QtCore.QPointF((x/(length/2))*w,h-(maxarray[i]/80)*h)
+			p1=QtCore.QPointF((x/(datalen/2))*w,h)
+			# p2=QtCore.QPointF((x/(datalen/2))*w,h-(maxarray[i]/80)*h)
+			p2=QtCore.QPointF((x/(datalen/2))*w,h-(maxarray[int((pow(x,power)/pow(datalen/2,power))*datalen/2 )]/80)*h)
+			# print int((pow(x,2)/pow(datalen/2,2))*datalen/2 )
 			qp.drawLine(p1,p2)
+
+
+
 
 class Example(QtGui.QMainWindow):
 	
@@ -257,9 +279,8 @@ class Example(QtGui.QMainWindow):
 		playAction.triggered.connect(playActionMethod)
 		u"ffwd:\u23E9 \u23ed rewind : \u23ea \u23ee playpause: \u23ef pause: \u2759\u2759"
 		
-		
-		
-		volslider = QtGui.QSlider(QtCore.Qt.Horizontal)
+		volslider = ResettingSlider(QtCore.Qt.Horizontal)
+		volslider.setRSV(100)
 		volslider.setTickInterval(10)
 		volslider.setTickPosition(volslider.TicksBelow)
 		volslider.setStatusTip("volume slider")
@@ -267,6 +288,24 @@ class Example(QtGui.QMainWindow):
 		volslider.setValue(100)
 		volslider.valueChanged.connect(self.setVolume)
 		volslider.setSizePolicy(QtGui.QSizePolicy.Fixed,QtGui.QSizePolicy.Fixed)
+		
+		powslider = ResettingSlider(QtCore.Qt.Horizontal)
+		powslider.setRSV(100)
+		powslider.setStatusTip("scale slider")
+		powslider.setRange(100,500)
+		powslider.setValue(100)
+		powslider.valueChanged.connect(self.setPower)
+		
+		
+		sfrslider = ResettingSlider(QtCore.Qt.Horizontal)
+		sfrslider.setRSV(0)
+		sfrslider.setStatusTip("rotation")
+		sfrslider.setRange(-180,180)
+		sfrslider.setValue(0)
+		sfrslider.valueChanged.connect(self.setAngle)
+		sfrslider.setTickInterval(45)
+		sfrslider.setTickPosition(sfrslider.TicksBelow)
+		
 
 		seekbar = QtGui.QSlider(QtCore.Qt.Horizontal)
 		seekbar.setStatusTip("seekbar")
@@ -282,9 +321,15 @@ class Example(QtGui.QMainWindow):
 		toolbar = self.addToolBar('ponies')
 		toolbar.setMovable(False)
 		
-		self.toolbar2=QtGui.QToolBar('fish',self)
-		self.addToolBar(QtCore.Qt.BottomToolBarArea,self.toolbar2)
-		self.toolbar2.setMovable(False)
+		
+		
+		toolbar2=QtGui.QToolBar('fish',self)
+		self.addToolBar(QtCore.Qt.BottomToolBarArea,toolbar2)
+		toolbar2.setMovable(False)
+		toolbar2.addWidget(powslider)
+		toolbar2.addWidget(sfrslider)
+		# powslider
+		
 		# toolbar2.setAllowedAreas(QtCore.Qt.BottomToolBarArea)
 		# toolbar2.addSeparator ()
 		
@@ -312,13 +357,26 @@ class Example(QtGui.QMainWindow):
 		self.setWindowTitle('Main window')	
 		self.show()
 	
+	def setPower(self):
+		global power
+		sender = self.sender()
+		power= (float(sender.value()) / 100.0)
+		# self.centralWidget.repaint()
+		print power
+	
 	def setVolume(self):
 		global volume
 		sender = self.sender()
 		volume= (float(sender.value()) / 100.0)
 		print volume
+	
+	def setAngle(self):
+		global ang
+		sender = self.sender()
+		ang= sender.value()
+		print ang
 	print "7"
-		
+
 
 
 def nActionMethod():
@@ -339,15 +397,17 @@ def main():
 		app.processEvents()
 		if(Playing):
 			qcw.repaint()
-			play()
+			# play()
+			try:
+				play()
+			except:
+				print "exception happened"
 		else:
 			sleep(0.01)
 			continue
 	print "4"
 	# exit(app.exec_())
 	exit(0)
-	
-
 
 if __name__ == '__main__':
-	main() 
+	main()
