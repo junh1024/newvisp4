@@ -9,11 +9,12 @@ import decoder
 import psyco
 from struct import pack, unpack
 from math import sin,cos,radians,log10,pow
-from sys import argv,exit
+from sys import argv,exit,exc_info
 from pyaudio import PyAudio
 from cStringIO import StringIO
 from time import sleep
 from ctypes import c_bool
+from random import randint
 # from mytest2 import play
 
 from numpy.fft import fft
@@ -21,18 +22,19 @@ from numpy import angle#,blackman
 
 from multiprocessing import Value, Lock, Process
 
-playing=Value(c_bool)
-playing.value=False
+global Playing
+Playing=Value(c_bool)
+Playing.value=False
 # print playing.value
 
 psyco.full()
 
 def init1():
-	global bufsize, wf, p,  ang,volume,datalen,maxarray,phaarray,prevmaxarray
-	global Playing,Running,power
+	global bufsize, wf, p,  ang,volume,datalen,maxarray,phaarray,prevmaxarray,prevphaarray
+	global Running,power
 	
 	power=1.0
-	Playing=useLogScale=False
+	Playing.value=useLogScale=False
 	Running=True
 	volume=1.0
 	ang=0
@@ -41,6 +43,7 @@ def init1():
 	phaarray=[0]*(bufsize/2)#for store phase
 	maxarray=[0]*(bufsize/2)#for store ampli
 	prevmaxarray=[0]*(bufsize/2)#for store ampli
+	prevphaarray=[0]*(bufsize/2)#for store ampli
 	# bmw=blackman(bufsize)
 	p = PyAudio() #make a pyaudio
 
@@ -65,8 +68,9 @@ def loadfile(file):
 
 def play():
 	global ang,data,maxarray,phaarray,datalen,bufsize,prevmaxarray
-	
-	
+	logexceptioncount=0
+	limitexceptioncount=0
+		
 	L_temp=0
 	R_temp=0
 
@@ -79,7 +83,6 @@ def play():
 	else:
 		datalen= len(data)/4
 	# print datalen
-	
 	
 	L=[0]*datalen#for store L ch samples
 	Lw=[0]*datalen#windowed version of L
@@ -104,13 +107,24 @@ def play():
 				R[i/2]=unpack('h',data[(i*2):((i*2)+2)])[0]*volume #else use the : operator as with mono, but makes an empty array then adds elements to it, which mite b bad 4 preformance
 				# maxarray[i/2]=max(L[i/2],R[i/2])*bmw[i/2]#apply blackmann window
 				
-			
 	for i in xrange(0,datalen): #perform stereo field rotation, uses 2% cpu
 		L_temp=L[i]*cos(radians(ang))-R[i]*sin(radians(ang))
 		R_temp=L[i]*sin(radians(ang))+R[i]*cos(radians(ang))
+
+		if L_temp >32767:
+			L_temp=32767
+			limitexceptioncount+=1
+		if R_temp >32767:
+			R_temp=32767
+			limitexceptioncount+=1
+		if L_temp <-32767:
+			L_temp=-32767
+			limitexceptioncount+=1
+		if R_temp <-32767:
+			R_temp=-32767
+			limitexceptioncount+=1
 		L[i]=L_temp
 		R[i]=R_temp
-	
 	
 	for i in xrange(0,datalen):
 		Lw[i]=L[i]*(1-((abs((datalen/2)-0.5-i))/((datalen/2)-0.5)))#apply triangle window
@@ -123,14 +137,28 @@ def play():
 	Rpha=angle(Rfft)
 	
 	for i in xrange(0,datalen/2):
-		phaarray[i]=abs(Lpha[i]-Rpha[i])#compute phase difference
-		temp=max ( abs(Lfft[i].real), abs(Rfft[i].real) ) #get the maximum of two channels' FFT
-		temp=10*log10(temp/float(datalen)) +40#scale by the number of pointss so that the magnitude does not depend on the length of FFT, he power in decibels by taking 10*log10, +40 so shouldn't be -ve values at 16bit
-		
-		if temp<(prevmaxarray[i]-1.2): #fixed-decay ballistics
+		phatemp=abs(Lpha[i]-Rpha[i])#compute phase difference
+		ffttemp=max ( abs(Lfft[i].real), abs(Rfft[i].real) ) #get the maximum of two channels' FFT
+		try:
+			ffttemp=10*log10(ffttemp/float(datalen)) +40#scale by the number of pointss so that the magnitude does not depend on the length of FFT, he power in decibels by taking 10*log10, +40 so shouldn't be -ve values at 16bit
+		except:
+			logexceptioncount+=1
+		if ffttemp<(prevmaxarray[i]-1.2): #fixed-decay ballistics
 			maxarray[i]=prevmaxarray[i]-1.2
 		else:
-			maxarray[i]=temp
+			maxarray[i]=ffttemp
+			
+		if phatemp>(prevphaarray[i]+0.2): #fixed-decay ballistics
+			phaarray[i]=prevphaarray[i]+0.2
+		else:
+			phaarray[i]=phatemp
+		
+		prevphaarray[i]=phaarray[i]
+		
+		# if ffttemp>(prevmaxarray[i]+3): #fixed-decay ballistics
+			# maxarray[i]=prevmaxarray[i]+3
+		# else:
+			# maxarray[i]=ffttemp
 		
 		# if temp<(prevmaxarray[i]): #infinite maximum ballistics
 			# maxarray[i]=prevmaxarray[i]
@@ -141,12 +169,12 @@ def play():
 		
 		# maxarray[i]=(prevmaxarray[i]+temp)/2 #average with 1ref ballistics
 		# prevmaxarray[i]=temp
-		
 
 	file_str = StringIO()
 	
 	#repack le data from L&R ch
 	for i in xrange(0,datalen*2):
+	
 		if(i%2==0):
 			file_str.write(pack('h',L[i/2]))
 		else:
@@ -154,6 +182,8 @@ def play():
 			
 	data=file_str.getvalue()
 	stream.write(data)#plays the data
+	print logexceptioncount
+	print limitexceptioncount
 
 class ResettingSlider(QtGui.QSlider):
 	def setRSV(self,rsv):
@@ -179,14 +209,12 @@ class SpectrumWidget(QtGui.QWidget):
 		backgroundrect=QtCore.QRect(0,0,w,h)
 		qp.setBrush(QtCore.Qt.SolidPattern)
 		qp.drawRect(backgroundrect)
-		
-		
+			
 	def drawLines(self, qp):
 		global maxarray,datalen,power
-		somegreen=QtGui.QColor(150,200,100)
 		apen=QtGui.QPen()
-		apen.setColor(somegreen)
 		apen.setWidth(2)
+		apen.setColor(QtGui.QColor(150,200,100))
 		qp.setPen(apen)
 		size = self.size()
 		w = float(size.width())
@@ -194,15 +222,13 @@ class SpectrumWidget(QtGui.QWidget):
 
 		for i in xrange(0,datalen/2):
 			x=float(i)
+			transformedindex=int((pow(x,power)/pow(datalen/2,power))*datalen/2 )
+			qp.setPen(QtGui.QColor(150-(phaarray[transformedindex]*1),200-(phaarray[transformedindex]*8),100-(phaarray[transformedindex]*8)))
 			p1=QtCore.QPointF((x/(datalen/2))*w,h)
-			# p2=QtCore.QPointF((x/(datalen/2))*w,h-(maxarray[i]/80)*h)
-			p2=QtCore.QPointF((x/(datalen/2))*w,h-(maxarray[int((pow(x,power)/pow(datalen/2,power))*datalen/2 )]/80)*h)
-			# print int((pow(x,2)/pow(datalen/2,2))*datalen/2 )
+			p2=QtCore.QPointF((x/(datalen/2))*w,h-(maxarray[transformedindex]/80)*h)
 			qp.drawLine(p1,p2)
 
-
-
-
+			
 class Example(QtGui.QMainWindow):
 	
 	def __init__(self):
@@ -216,9 +242,7 @@ class Example(QtGui.QMainWindow):
 		self.close()
 	
 	def showDialog(self):
-		
 		fname = QtGui.QFileDialog.getOpenFileName(self, 'Open file')
-		
 		print fname
 		loadfile(str(fname))
 	
@@ -234,7 +258,6 @@ class Example(QtGui.QMainWindow):
 		else:
 			event.ignore()
 	
-	
 	def dropEvent(self, event):
 		if event.mimeData().hasUrls:
 			event.accept()
@@ -246,7 +269,6 @@ class Example(QtGui.QMainWindow):
 			event.ignore()
 		print l
 		loadfile(str(l[0]))
-	
 
 	
 	def initUI(self):
@@ -271,8 +293,6 @@ class Example(QtGui.QMainWindow):
 		openAction.setShortcut("Ctrl+O")
 		openAction.triggered.connect(self.showDialog)
 		
-
-		
 		playAction=QtGui.QAction( u"Play/Pause:\u25b8/||", self)
 		playAction.setStatusTip("actionhelptext")
 		playAction.setShortcut('c')
@@ -296,7 +316,6 @@ class Example(QtGui.QMainWindow):
 		powslider.setValue(100)
 		powslider.valueChanged.connect(self.setPower)
 		
-		
 		sfrslider = ResettingSlider(QtCore.Qt.Horizontal)
 		sfrslider.setRSV(0)
 		sfrslider.setStatusTip("rotation")
@@ -305,7 +324,6 @@ class Example(QtGui.QMainWindow):
 		sfrslider.valueChanged.connect(self.setAngle)
 		sfrslider.setTickInterval(45)
 		sfrslider.setTickPosition(sfrslider.TicksBelow)
-		
 
 		seekbar = QtGui.QSlider(QtCore.Qt.Horizontal)
 		seekbar.setStatusTip("seekbar")
@@ -326,12 +344,18 @@ class Example(QtGui.QMainWindow):
 		toolbar2=QtGui.QToolBar('fish',self)
 		self.addToolBar(QtCore.Qt.BottomToolBarArea,toolbar2)
 		toolbar2.setMovable(False)
-		toolbar2.addWidget(powslider)
-		toolbar2.addWidget(sfrslider)
-		# powslider
 		
-		# toolbar2.setAllowedAreas(QtCore.Qt.BottomToolBarArea)
-		# toolbar2.addSeparator ()
+		LinearLabel = QtGui.QLabel(" Linear ")
+		toolbar2.addWidget(LinearLabel)
+		toolbar2.addWidget(powslider)
+		LogLabel = QtGui.QLabel(" Log ")
+		toolbar2.addWidget(LogLabel)
+		toolbar2.addSeparator ()
+		
+		SFRLabel = QtGui.QLabel(" SFR ")
+		toolbar2.addWidget(SFRLabel)
+		toolbar2.addWidget(sfrslider)
+		
 		
 		toolbar.addAction(nAction)
 		toolbar.addAction(openAction)
@@ -340,9 +364,6 @@ class Example(QtGui.QMainWindow):
 		toolbar.addWidget(volslider)
 		toolbar.addSeparator ()
 		
-		# spacer = QtGui.QLabel("          ")
-		# toolbar.addWidget(spacer)
-
 		toolbar.addWidget(seekbar)
 		toolbar.addSeparator ()
 		toolbar.addAction(exitAction)
@@ -384,7 +405,7 @@ def nActionMethod():
 
 def playActionMethod():
 	global Playing
-	Playing=not Playing
+	Playing.value=not Playing.value
 
 def main():
 	init1()
@@ -392,18 +413,17 @@ def main():
 	app = QtGui.QApplication(argv)
 	print "2"
 	ex = Example()
+	
+	
 	qcw=ex.centralWidget()
 	while(Running):
 		app.processEvents()
-		if(Playing):
-			qcw.repaint()
-			# play()
-			try:
-				play()
-			except:
-				print "exception happened"
+		qcw.repaint()
+		if(Playing.value):
+			
+			play()
 		else:
-			sleep(0.01)
+			sleep(0.1)
 			continue
 	print "4"
 	# exit(app.exec_())
