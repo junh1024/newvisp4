@@ -3,18 +3,20 @@
 # http://stackoverflow.com/questions/4151637/pyqt4-drag-and-drop-files-into-qlistwidget
 # http://www.qsl.net/d/dl4yhf/speclab/specdisp.htm
 
+
+from sys import argv,exit
+
 from PyQt4 import QtGui, QtCore,Qt
 
 import decoder
 import psyco
 from struct import pack, unpack
 from math import sin,cos,radians,log10,pow
-from sys import argv,exit,exc_info
+
 from pyaudio import PyAudio
 from cStringIO import StringIO
 from time import sleep
-from ctypes import c_bool
-from random import randint
+from ctypes import *
 # from mytest2 import play
 
 from numpy.fft import fft
@@ -22,9 +24,13 @@ from numpy import angle#,blackman
 
 from multiprocessing import Value, Lock, Process
 
-global Playing
-Playing=Value(c_bool)
-Playing.value=False
+global Playing,Running
+# Playing=Value(c_bool)
+# Playing=c_bool(False)
+Running=True
+Playing=False
+# Running=Value(c_bool)
+# Running=c_bool(True)
 # print playing.value
 
 psyco.full()
@@ -34,8 +40,8 @@ def init1():
 	global Running,power
 	
 	power=1.0
-	Playing.value=useLogScale=False
-	Running=True
+	useLogScale=False
+	
 	volume=1.0
 	ang=0
 	bufsize = 2048
@@ -91,12 +97,13 @@ def play():
 	
 	#unpack le data
 	if 	wf.getnchannels() ==1: #upscale mono to stereo
-		for i in range(0,datalen/2):
+		for i in range(0,datalen):
 			# print i
-			L[i*2]=unpack('h',data[(i*2):((i*2)+2)])[0]
-			R[i*2+1]=unpack('h',data[(i*2):((i*2)+2)])[0]
-			L[i*2]=L[i*2]*0.707*volume #0.707 is needed to achieve same volume of 1ch played through 2ch
-			R[i*2+1]=R[i*2+1]*0.707*volume #which is half the sqrt of two
+			L[i]=unpack('h',data[(i*2):((i*2)+2)])[0]
+			R[i]=unpack('h',data[(i*2):((i*2)+2)])[0]
+			# R[i*2+1]=unpack('h',data[(i*2):((i*2)+2)])[0]
+			# L[i*2]=L[i*2]*0.707*volume #0.707 is needed to achieve same volume of 1ch played through 2ch
+			# R[i*2+1]=R[i*2+1]*0.707*volume #which is half the sqrt of two
 			
 	else:#unpack stereo data into separate arrays of Left & right
 		for i in xrange(0,datalen*2):
@@ -182,8 +189,8 @@ def play():
 			
 	data=file_str.getvalue()
 	stream.write(data)#plays the data
-	print logexceptioncount
-	print limitexceptioncount
+	# print logexceptioncount
+	# print limitexceptioncount
 
 class ResettingSlider(QtGui.QSlider):
 	def setRSV(self,rsv):
@@ -192,6 +199,10 @@ class ResettingSlider(QtGui.QSlider):
 	def mouseDoubleClickEvent(self, event):
 		self.setValue(self.resetvalue)
 
+# class MyQMainWindow():
+
+		
+		
 class SpectrumWidget(QtGui.QWidget):
 	def paintEvent(self, e):
 		qp = QtGui.QPainter()
@@ -228,16 +239,16 @@ class SpectrumWidget(QtGui.QWidget):
 			p2=QtCore.QPointF((x/(datalen/2))*w,h-(maxarray[transformedindex]/80)*h)
 			qp.drawLine(p1,p2)
 
-			
+
 class Example(QtGui.QMainWindow):
-	
 	def __init__(self):
 		super(Example, self).__init__()
 		print "5"
 		self.initUI()
 		
-	def end(self):
-		global Running
+	def closeEvent(self,whocares):
+		global Playing, Running
+		Playing=False
 		Running=False
 		self.close()
 	
@@ -270,7 +281,7 @@ class Example(QtGui.QMainWindow):
 		print l
 		loadfile(str(l[0]))
 
-	
+		
 	def initUI(self):
 		print "6"
 		self.statusBar()
@@ -334,7 +345,7 @@ class Example(QtGui.QMainWindow):
 		exitAction = QtGui.QAction( u"Exit", self)
 		exitAction.setShortcut('Ctrl+Q')
 		exitAction.setStatusTip('Exit application')
-		exitAction.triggered.connect(self.end)
+		exitAction.triggered.connect(self.closeEvent)
 		
 		toolbar = self.addToolBar('ponies')
 		toolbar.setMovable(False)
@@ -405,8 +416,8 @@ def nActionMethod():
 
 def playActionMethod():
 	global Playing
-	Playing.value=not Playing.value
-
+	Playing=not Playing
+	
 def main():
 	init1()
 	print "1"
@@ -414,12 +425,11 @@ def main():
 	print "2"
 	ex = Example()
 	
-	
 	qcw=ex.centralWidget()
 	while(Running):
 		app.processEvents()
 		qcw.repaint()
-		if(Playing.value):
+		if(Playing):
 			
 			play()
 		else:
