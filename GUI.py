@@ -36,11 +36,12 @@ Playing=False
 psyco.full()
 
 def init1():
-	global bufsize, wf, p,  ang,volume,datalen,maxarray,phaarray,prevmaxarray,prevphaarray
-	global Running,power
-	
+	global bufsize, wf, p,  ang,volume,datalen,maxarray,phaarray,prevmaxarray,prevphaarray,phasetext
+	global Running,power,doSFR
+	phasetext="detailed"
+	wf=None
 	power=1.0
-	useLogScale=False
+	doSFR=True
 	
 	volume=1.0
 	ang=0
@@ -73,7 +74,7 @@ def loadfile(file):
 		output = True)
 
 def play():
-	global ang,data,maxarray,phaarray,datalen,bufsize,prevmaxarray
+	global ang,data,maxarray,phaarray,datalen,bufsize,prevmaxarray,doSFR
 	logexceptioncount=0
 	limitexceptioncount=0
 		
@@ -113,25 +114,26 @@ def play():
 			else:
 				R[i/2]=unpack('h',data[(i*2):((i*2)+2)])[0]*volume #else use the : operator as with mono, but makes an empty array then adds elements to it, which mite b bad 4 preformance
 				# maxarray[i/2]=max(L[i/2],R[i/2])*bmw[i/2]#apply blackmann window
-				
-	for i in xrange(0,datalen): #perform stereo field rotation, uses 2% cpu
-		L_temp=L[i]*cos(radians(ang))-R[i]*sin(radians(ang))
-		R_temp=L[i]*sin(radians(ang))+R[i]*cos(radians(ang))
+	
+	
+	if(doSFR):
+		for i in xrange(0,datalen): #perform stereo field rotation, uses 2% cpu
+			L_temp=L[i]*cos(radians(ang))-R[i]*sin(radians(ang))
+			R_temp=L[i]*sin(radians(ang))+R[i]*cos(radians(ang))
+			L[i]=L_temp
+			R[i]=R_temp
+			
+	
+	for i in xrange(0,datalen): #applylimiting
+		if L[i] >32767:
+			L[i]=32767
+		if R[i] >32767:
+			R[i]=32767
+		if L[i] <-32767:
+			L[i]=-32767
+		if R[i] <-32767:
+			R[i]=-32767
 
-		if L_temp >32767:
-			L_temp=32767
-			limitexceptioncount+=1
-		if R_temp >32767:
-			R_temp=32767
-			limitexceptioncount+=1
-		if L_temp <-32767:
-			L_temp=-32767
-			limitexceptioncount+=1
-		if R_temp <-32767:
-			R_temp=-32767
-			limitexceptioncount+=1
-		L[i]=L_temp
-		R[i]=R_temp
 	
 	for i in xrange(0,datalen):
 		Lw[i]=L[i]*(1-((abs((datalen/2)-0.5-i))/((datalen/2)-0.5)))#apply triangle window
@@ -222,7 +224,7 @@ class SpectrumWidget(QtGui.QWidget):
 		qp.drawRect(backgroundrect)
 			
 	def drawLines(self, qp):
-		global maxarray,datalen,power
+		global maxarray,datalen,power,phasetext
 		apen=QtGui.QPen()
 		apen.setWidth(2)
 		apen.setColor(QtGui.QColor(150,200,100))
@@ -230,14 +232,39 @@ class SpectrumWidget(QtGui.QWidget):
 		size = self.size()
 		w = float(size.width())
 		h = float(size.height())
-
-		for i in xrange(0,datalen/2):
-			x=float(i)
-			transformedindex=int((pow(x,power)/pow(datalen/2,power))*datalen/2 )
-			qp.setPen(QtGui.QColor(150-(phaarray[transformedindex]*1),200-(phaarray[transformedindex]*8),100-(phaarray[transformedindex]*8)))
-			p1=QtCore.QPointF((x/(datalen/2))*w,h)
-			p2=QtCore.QPointF((x/(datalen/2))*w,h-(maxarray[transformedindex]/80)*h)
-			qp.drawLine(p1,p2)
+		
+		if phasetext == "don't":
+			for i in xrange(0,datalen/2):
+				x=float(i)
+				transformedindex=int((pow(x,power)/pow(datalen/2,power))*datalen/2 )
+				p1=QtCore.QPointF((x/(datalen/2))*w,h)
+				p2=QtCore.QPointF((x/(datalen/2))*w,h-(maxarray[transformedindex]/80)*h)
+				qp.drawLine(p1,p2)
+			
+		elif phasetext == "magnified average":
+		
+			total=0
+			for i in xrange(0,datalen/2):
+				total+=phaarray[i]
+			total=(total)*4/datalen
+		
+			qp.setPen(QtGui.QColor(150-(total*1),200-(total*8),100-(total*8)))
+		
+			for i in xrange(0,datalen/2):
+				x=float(i)
+				transformedindex=int((pow(x,power)/pow(datalen/2,power))*datalen/2 )
+				
+				p1=QtCore.QPointF((x/(datalen/2))*w,h)
+				p2=QtCore.QPointF((x/(datalen/2))*w,h-(maxarray[transformedindex]/80)*h)
+				qp.drawLine(p1,p2)
+		else:
+			for i in xrange(0,datalen/2):
+				x=float(i)
+				transformedindex=int((pow(x,power)/pow(datalen/2,power))*datalen/2 )
+				qp.setPen(QtGui.QColor(150-(phaarray[transformedindex]*1),200-(phaarray[transformedindex]*8),100-(phaarray[transformedindex]*8)))
+				p1=QtCore.QPointF((x/(datalen/2))*w,h)
+				p2=QtCore.QPointF((x/(datalen/2))*w,h-(maxarray[transformedindex]/80)*h)
+				qp.drawLine(p1,p2)
 
 
 class Example(QtGui.QMainWindow):
@@ -327,6 +354,17 @@ class Example(QtGui.QMainWindow):
 		powslider.setValue(100)
 		powslider.valueChanged.connect(self.setPower)
 		
+		SFRcb = QtGui.QCheckBox('SFR', self)
+		SFRcb.toggle()
+		SFRcb.stateChanged.connect(self.setSFR)
+		
+		combo = QtGui.QComboBox(self)
+
+		combo.addItem("detailed")
+		combo.addItem("magnified average")
+		combo.addItem("don't")
+		combo.activated[str].connect(self.setPhaseColours)
+		
 		sfrslider = ResettingSlider(QtCore.Qt.Horizontal)
 		sfrslider.setRSV(0)
 		sfrslider.setStatusTip("rotation")
@@ -363,8 +401,10 @@ class Example(QtGui.QMainWindow):
 		toolbar2.addWidget(LogLabel)
 		toolbar2.addSeparator ()
 		
-		SFRLabel = QtGui.QLabel(" SFR ")
-		toolbar2.addWidget(SFRLabel)
+		# SFRLabel = QtGui.QLabel(" SFR ")
+		# toolbar2.addWidget(SFRLabel)
+		toolbar2.addWidget(combo)
+		toolbar2.addWidget(SFRcb)
 		toolbar2.addWidget(sfrslider)
 		
 		
@@ -407,6 +447,15 @@ class Example(QtGui.QMainWindow):
 		sender = self.sender()
 		ang= sender.value()
 		print ang
+		
+	def setSFR(self):
+		global doSFR
+		doSFR= not doSFR
+		
+	def setPhaseColours(self, text):
+		global phasetext
+		phasetext=text
+
 	print "7"
 
 
@@ -419,17 +468,19 @@ def playActionMethod():
 	Playing=not Playing
 	
 def main():
+	
 	init1()
 	print "1"
 	app = QtGui.QApplication(argv)
 	print "2"
+
 	ex = Example()
 	
 	qcw=ex.centralWidget()
 	while(Running):
 		app.processEvents()
 		qcw.repaint()
-		if(Playing):
+		if(Playing and wf):
 			
 			play()
 		else:
