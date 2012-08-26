@@ -3,7 +3,6 @@
 # http://stackoverflow.com/questions/4151637/pyqt4-drag-and-drop-files-into-qlistwidget
 # http://www.qsl.net/d/dl4yhf/speclab/specdisp.htm
 
-
 from sys import argv,exit
 
 from PyQt4 import QtGui, QtCore,Qt
@@ -36,9 +35,10 @@ Playing=False
 psyco.full()
 
 def init1():
-	global bufsize, wf, p,  ang,volume,datalen,maxarray,phaarray,prevmaxarray,prevphaarray,phasetext
-	global Running,power,doSFR
+	global bufsize, wf, p,  ang,volume,datalen,maxarray,phaarray,prevmaxarray,prevphaarray
+	global Running,power,doSFR,phasetext,ballisticsmode
 	phasetext="detailed"
+	ballisticsmode="1-way variable decay"
 	wf=None
 	power=1.0
 	doSFR=True
@@ -74,10 +74,8 @@ def loadfile(file):
 		output = True)
 
 def play():
-	global ang,data,maxarray,phaarray,datalen,bufsize,prevmaxarray,doSFR
-	logexceptioncount=0
-	limitexceptioncount=0
-		
+	global ang,data,maxarray,phaarray,datalen,bufsize,prevmaxarray,doSFR,ballisticsmode
+	
 	L_temp=0
 	R_temp=0
 
@@ -95,16 +93,15 @@ def play():
 	Lw=[0]*datalen#windowed version of L
 	R=[0]*datalen
 	Rw=[0]*datalen
+	ffttemp=[0]*datalen
 	
 	#unpack le data
 	if 	wf.getnchannels() ==1: #upscale mono to stereo
 		for i in range(0,datalen):
 			# print i
-			L[i]=unpack('h',data[(i*2):((i*2)+2)])[0]
-			R[i]=unpack('h',data[(i*2):((i*2)+2)])[0]
+			L[i]=unpack('h',data[(i*2):((i*2)+2)])[0]*0.707*volume #0.707 is needed to achieve same volume of 1ch played through 2ch
+			R[i]=unpack('h',data[(i*2):((i*2)+2)])[0]*0.707*volume #which is half the sqrt of two
 			# R[i*2+1]=unpack('h',data[(i*2):((i*2)+2)])[0]
-			# L[i*2]=L[i*2]*0.707*volume #0.707 is needed to achieve same volume of 1ch played through 2ch
-			# R[i*2+1]=R[i*2+1]*0.707*volume #which is half the sqrt of two
 			
 	else:#unpack stereo data into separate arrays of Left & right
 		for i in xrange(0,datalen*2):
@@ -114,7 +111,6 @@ def play():
 			else:
 				R[i/2]=unpack('h',data[(i*2):((i*2)+2)])[0]*volume #else use the : operator as with mono, but makes an empty array then adds elements to it, which mite b bad 4 preformance
 				# maxarray[i/2]=max(L[i/2],R[i/2])*bmw[i/2]#apply blackmann window
-	
 	
 	if(doSFR):
 		for i in xrange(0,datalen): #perform stereo field rotation, uses 2% cpu
@@ -145,39 +141,64 @@ def play():
 	Rfft=fft(Rw)
 	Rpha=angle(Rfft)
 	
-	for i in xrange(0,datalen/2):
+	for i in xrange(0,datalen/2): #compute phase apply phase ballistics
 		phatemp=abs(Lpha[i]-Rpha[i])#compute phase difference
-		ffttemp=max ( abs(Lfft[i].real), abs(Rfft[i].real) ) #get the maximum of two channels' FFT
-		try:
-			ffttemp=10*log10(ffttemp/float(datalen)) +40#scale by the number of pointss so that the magnitude does not depend on the length of FFT, he power in decibels by taking 10*log10, +40 so shouldn't be -ve values at 16bit
-		except:
-			logexceptioncount+=1
-		if ffttemp<(prevmaxarray[i]-1.2): #fixed-decay ballistics
-			maxarray[i]=prevmaxarray[i]-1.2
-		else:
-			maxarray[i]=ffttemp
-			
+		
 		if phatemp>(prevphaarray[i]+0.2): #fixed-decay ballistics
 			phaarray[i]=prevphaarray[i]+0.2
 		else:
 			phaarray[i]=phatemp
 		
 		prevphaarray[i]=phaarray[i]
+	
+	for i in xrange(0,datalen/2): #compute fft
+		ffttemp[i]=max ( abs(Lfft[i].real), abs(Rfft[i].real) ) #get the maximum of two channels' FFT
+		try:
+			ffttemp[i]=10*log10(ffttemp[i]/float(datalen)) +40#scale by the number of points so that the magnitude does not depend on the length of FFT, he power in decibels by taking 10*log10, +40 so shouldn't be -ve values at 16bit
+		except:
+			pass
+	
+	if ballisticsmode ==  "1-way variable decay":
+		ballisticscoefficient=[0]*(datalen/2)
+		for i in xrange(0,datalen/2):
+			ballisticscoefficient[i]=1.2+(i*2/(datalen/2))
+			
+		for i in xrange(0,datalen/2):
+			if ffttemp[i]<(prevmaxarray[i]-ballisticscoefficient[i]):
+				maxarray[i]=prevmaxarray[i]-ballisticscoefficient[i]
+			else:
+				maxarray[i]=ffttemp[i]
+			prevmaxarray[i]=maxarray[i]
+		
+	elif ballisticsmode =="1-way fixed decay":
+		for i in xrange(0,datalen/2):
+			if ffttemp[i]<(prevmaxarray[i]-1.2):
+				maxarray[i]=prevmaxarray[i]-1.2
+			else:
+				maxarray[i]=ffttemp[i]
+			prevmaxarray[i]=maxarray[i]
+			
+	elif ballisticsmode =="2-way average":
+		for i in xrange(0,datalen/2):
+			maxarray[i]=(prevmaxarray[i]+ffttemp[i])/2 #average with 1ref ballistics
+			prevmaxarray[i]=ffttemp[i]
+		
+	elif ballisticsmode =="infinite maximum":
+		for i in xrange(0,datalen/2):
+			if ffttemp[i]>(prevmaxarray[i]): #infinite maximum ballistics
+				maxarray[i]=ffttemp[i]
+			prevmaxarray[i]=maxarray[i]
+	else:
+		for i in xrange(0,datalen/2): #none
+			maxarray[i]=ffttemp[i]
+			prevmaxarray[i]=maxarray[i]
+
 		
 		# if ffttemp>(prevmaxarray[i]+3): #fixed-decay ballistics
 			# maxarray[i]=prevmaxarray[i]+3
 		# else:
 			# maxarray[i]=ffttemp
-		
-		# if temp<(prevmaxarray[i]): #infinite maximum ballistics
-			# maxarray[i]=prevmaxarray[i]
-		# else:
-			# maxarray[i]=temp
-		
-		prevmaxarray[i]=maxarray[i] #both ballistics above need this line
-		
-		# maxarray[i]=(prevmaxarray[i]+temp)/2 #average with 1ref ballistics
-		# prevmaxarray[i]=temp
+
 
 	file_str = StringIO()
 	
@@ -191,8 +212,6 @@ def play():
 			
 	data=file_str.getvalue()
 	stream.write(data)#plays the data
-	# print logexceptioncount
-	# print limitexceptioncount
 
 class ResettingSlider(QtGui.QSlider):
 	def setRSV(self,rsv):
@@ -200,8 +219,6 @@ class ResettingSlider(QtGui.QSlider):
 	
 	def mouseDoubleClickEvent(self, event):
 		self.setValue(self.resetvalue)
-
-# class MyQMainWindow():
 
 		
 		
@@ -225,15 +242,17 @@ class SpectrumWidget(QtGui.QWidget):
 			
 	def drawLines(self, qp):
 		global maxarray,datalen,power,phasetext
-		apen=QtGui.QPen()
-		apen.setWidth(2)
-		apen.setColor(QtGui.QColor(150,200,100))
-		qp.setPen(apen)
 		size = self.size()
 		w = float(size.width())
 		h = float(size.height())
 		
-		if phasetext == "don't":
+		apen=QtGui.QPen()
+		# apen.setWidthF(w/(datalen/2)) #setting width doesn't seem to work
+		apen.setColor(QtGui.QColor(150,200,100))
+		qp.setPen(apen)
+
+		
+		if phasetext == "none":
 			for i in xrange(0,datalen/2):
 				x=float(i)
 				transformedindex=int((pow(x,power)/pow(datalen/2,power))*datalen/2 )
@@ -248,6 +267,8 @@ class SpectrumWidget(QtGui.QWidget):
 				total+=phaarray[i]
 			total=(total)*4/datalen
 		
+			# apen.setWidthF(w*4/(datalen))
+			# qp.setPen(apen)
 			qp.setPen(QtGui.QColor(150-(total*1),200-(total*8),100-(total*8)))
 		
 			for i in xrange(0,datalen/2):
@@ -358,12 +379,19 @@ class Example(QtGui.QMainWindow):
 		SFRcb.toggle()
 		SFRcb.stateChanged.connect(self.setSFR)
 		
-		combo = QtGui.QComboBox(self)
-
-		combo.addItem("detailed")
-		combo.addItem("magnified average")
-		combo.addItem("don't")
-		combo.activated[str].connect(self.setPhaseColours)
+		PColCombo = QtGui.QComboBox(self)
+		PColCombo.addItem("detailed")
+		PColCombo.addItem("magnified average")
+		PColCombo.addItem("none")
+		PColCombo.activated[str].connect(self.setPhaseColours)
+		
+		BalCombo = QtGui.QComboBox(self)
+		BalCombo.addItem("1-way variable decay")
+		BalCombo.addItem("1-way fixed decay")
+		BalCombo.addItem("2-way average")
+		BalCombo.addItem("infinite maximum")
+		BalCombo.addItem("none")
+		BalCombo.activated[str].connect(self.setBallistics)
 		
 		sfrslider = ResettingSlider(QtCore.Qt.Horizontal)
 		sfrslider.setRSV(0)
@@ -395,15 +423,17 @@ class Example(QtGui.QMainWindow):
 		toolbar2.setMovable(False)
 		
 		LinearLabel = QtGui.QLabel(" Linear ")
+		toolbar2.addWidget(BalCombo)
 		toolbar2.addWidget(LinearLabel)
 		toolbar2.addWidget(powslider)
 		LogLabel = QtGui.QLabel(" Log ")
 		toolbar2.addWidget(LogLabel)
 		toolbar2.addSeparator ()
 		
-		# SFRLabel = QtGui.QLabel(" SFR ")
-		# toolbar2.addWidget(SFRLabel)
-		toolbar2.addWidget(combo)
+		PColLabel = QtGui.QLabel(" Phase colours ")
+		toolbar2.addWidget(PColLabel)
+		toolbar2.addWidget(PColCombo)
+		toolbar2.addSeparator ()
 		toolbar2.addWidget(SFRcb)
 		toolbar2.addWidget(sfrslider)
 		
@@ -455,9 +485,11 @@ class Example(QtGui.QMainWindow):
 	def setPhaseColours(self, text):
 		global phasetext
 		phasetext=text
-
+		
+	def setBallistics(self, text):
+		global ballisticsmode
+		ballisticsmode=text
 	print "7"
-
 
 
 def nActionMethod():
