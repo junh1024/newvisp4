@@ -228,6 +228,8 @@ class SpectrumWidget(QtGui.QWidget):
 		qp.begin(self)
 		# qp.setRenderHint(QtGui.QPainter.Antialiasing)
 		self.drawBackground(qp)
+		if(wf):
+			self.drawScale(qp)
 		self.drawLines(qp)
 		qp.end()
 
@@ -239,6 +241,45 @@ class SpectrumWidget(QtGui.QWidget):
 		backgroundrect=QtCore.QRect(0,0,w,h)
 		qp.setBrush(QtCore.Qt.SolidPattern)
 		qp.drawRect(backgroundrect)
+			
+	def drawScale(self, qp):
+		global wf
+		size = self.size()
+		w = float(size.width())
+		h = float(size.height())
+		
+		apen=QtGui.QPen()
+		apen.setColor(QtGui.QColor(111,111,111))
+		qp.setPen(apen)
+		
+		SR= wf.getframerate()
+		
+		alist=[]
+		for i in xrange(7,(14+1)):
+			alist.append(2**(i))
+		
+		for hz in alist:
+			ti = (pow(hz,1/power)/pow(SR/2,1/power))*w
+			p1=QtCore.QPointF(ti,0)
+			p1a=QtCore.QPointF(ti,20)
+			p2=QtCore.QPointF(ti,h)
+			qp.drawLine(p1,p2)
+			qp.drawText(p1a,str(hz) + " hz")
+
+			
+		xpos=(QtGui.QWidget.mapFromGlobal (self, QtGui.QCursor.pos()).x())
+		if(self.underMouse() ):
+			
+			freq= int((pow(xpos,power)/pow(w,power))*(SR/2))
+			qp.drawText( QtCore.QPointF(w-64, 40) , str(freq)+" hz"  )
+
+		# (pow(hz,1/power)/pow(SR/2,1/power)) 
+		
+		# print QtGui.QWidget.mapFromGlobal (self, QtGui.QCursor.pos())
+		# transformedindex=int((pow(x,power)/pow(datalen/2,power))*datalen/2 )
+		
+
+
 			
 	def drawLines(self, qp):
 		global maxarray,datalen,power,phasetext
