@@ -21,7 +21,7 @@ from ctypes import *
 from numpy.fft import fft
 from numpy import angle#,blackman
 
-from multiprocessing import Value, Lock, Process
+# from multiprocessing import Value, Lock, Process
 
 global Playing,Running
 # Playing=Value(c_bool)
@@ -36,7 +36,7 @@ psyco.full()
 
 def init1():
 	global bufsize, wf, p,  ang,volume,datalen,maxarray,phaarray,prevmaxarray,prevphaarray
-	global Running,power,doSFR,phasetext,ballisticsmode
+	global Running,power,doSFR,phasetext,ballisticsmode,currentfilepath
 	phasetext="detailed"
 	ballisticsmode="1-way variable decay"
 	wf=None
@@ -82,7 +82,8 @@ def play():
 	# ang=(ang+5)%360
 	data = wf.readframes(bufsize)
 	if(data==''):
-		Playing=False
+		# Playing=False
+		loadfile(currentfilepath)
 		return
 	
 	if 	wf.getnchannels() ==1:
@@ -338,9 +339,10 @@ class Example(QtGui.QMainWindow):
 		self.close()
 	
 	def showDialog(self):
-		fname = QtGui.QFileDialog.getOpenFileName(self, 'Open file')
-		print fname
-		loadfile(str(fname))
+		global currentfilepath
+		currentfilepath = str( QtGui.QFileDialog.getOpenFileName(self, 'Open file') )
+		print currentfilepath
+		loadfile(currentfilepath)
 	
 	def dragEnterEvent(self, event):
 		if event.mimeData().hasUrls:
@@ -355,6 +357,7 @@ class Example(QtGui.QMainWindow):
 			event.ignore()
 	
 	def dropEvent(self, event):
+		global currentfilepath
 		if event.mimeData().hasUrls:
 			event.accept()
 			l = []
@@ -363,8 +366,9 @@ class Example(QtGui.QMainWindow):
 			# self.emit(SIGNAL("dropped"), l)
 		else:
 			event.ignore()
-		print l
-		loadfile(str(l[0]))
+		currentfilepath=str(l[0])
+		print currentfilepath
+		loadfile(currentfilepath)
 
 		
 	def initUI(self):
