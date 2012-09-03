@@ -81,7 +81,7 @@ def play():
 
 	# ang=(ang+5)%360
 	data = wf.readframes(bufsize)
-	if(data==''):
+	if(data==''):#this usually means EOF
 		# Playing=False
 		loadfile(currentfilepath)
 		return
@@ -224,7 +224,6 @@ class ResettingSlider(QtGui.QSlider):#if it's double clicked, it resets to a res
 	def mouseDoubleClickEvent(self, event):
 		self.setValue(self.resetvalue)
 
-		
 		
 class SpectrumWidget(QtGui.QWidget):
 	def paintEvent(self, e):
@@ -389,12 +388,10 @@ class Example(QtGui.QMainWindow):
 		nAction.setStatusTip(u'`\(°.o)/´ ┐(￣ー￣)┌ ')
 		
 		openAction=QtGui.QAction( u"Open File...", self)
-		openAction.setStatusTip("actionhelptext")
 		openAction.setShortcut("Ctrl+O")
 		openAction.triggered.connect(self.showDialog)
 		
 		playAction=QtGui.QAction( u"Play/Pause:\u25b8/||", self)
-		playAction.setStatusTip("actionhelptext")
 		playAction.setShortcut('c')
 		playAction.triggered.connect(playActionMethod)
 		u"ffwd:\u23E9 \u23ed rewind : \u23ea \u23ee playpause: \u23ef pause: \u2759\u2759"
@@ -403,7 +400,7 @@ class Example(QtGui.QMainWindow):
 		volslider.setRSV(100)
 		volslider.setTickInterval(10)
 		volslider.setTickPosition(volslider.TicksBelow)
-		volslider.setStatusTip("volume slider")
+		volslider.setStatusTip("Volume slider")
 		volslider.setRange(0,100)
 		volslider.setValue(100)
 		volslider.valueChanged.connect(self.setVolume)
@@ -411,7 +408,7 @@ class Example(QtGui.QMainWindow):
 		
 		powslider = ResettingSlider(QtCore.Qt.Horizontal)
 		powslider.setRSV(100)
-		powslider.setStatusTip("scale slider")
+		powslider.setStatusTip("Scale slider")
 		powslider.setRange(100,500)
 		powslider.setValue(100)
 		powslider.valueChanged.connect(self.setPower)
@@ -424,6 +421,7 @@ class Example(QtGui.QMainWindow):
 		PColCombo.addItem("detailed")
 		PColCombo.addItem("magnified average")
 		PColCombo.addItem("none")
+		PColCombo.setStatusTip("Phase colours")
 		PColCombo.activated[str].connect(self.setPhaseColours)
 		
 		BalCombo = QtGui.QComboBox(self)
@@ -432,11 +430,12 @@ class Example(QtGui.QMainWindow):
 		BalCombo.addItem("2-way average")
 		BalCombo.addItem("infinite maximum")
 		BalCombo.addItem("none")
+		BalCombo.setStatusTip("Ballistics mode")
 		BalCombo.activated[str].connect(self.setBallistics)
 		
 		sfrslider = ResettingSlider(QtCore.Qt.Horizontal)
 		sfrslider.setRSV(0)
-		sfrslider.setStatusTip("rotation")
+		sfrslider.setStatusTip("Stereo field rotation")
 		sfrslider.setRange(-180,180)
 		sfrslider.setValue(0)
 		sfrslider.valueChanged.connect(self.setAngle)
@@ -444,7 +443,7 @@ class Example(QtGui.QMainWindow):
 		sfrslider.setTickPosition(sfrslider.TicksBelow)
 
 		seekbar = QtGui.QSlider(QtCore.Qt.Horizontal)
-		seekbar.setStatusTip("seekbar")
+		# seekbar.setStatusTip("seekbar")
 		# volslider.sizeHint=QtCore.QSize(600, 150)
 		# seekbar.minimumSizeHint=QtCore.QSize(100,1)
 		# seekbar.setMinimumSize(QtCore.QSize(100,1))
@@ -456,23 +455,23 @@ class Example(QtGui.QMainWindow):
 		
 		toolbar = self.addToolBar('ponies')
 		toolbar.setMovable(False)
-		
-		
+
 		
 		toolbar2=QtGui.QToolBar('fish',self)
 		self.addToolBar(QtCore.Qt.BottomToolBarArea,toolbar2)
 		toolbar2.setMovable(False)
 		
-		LinearLabel = QtGui.QLabel(" Linear ")
 		toolbar2.addWidget(BalCombo)
+		toolbar2.addSeparator ()
+		LinearLabel = QtGui.QLabel(" Linear ")
 		toolbar2.addWidget(LinearLabel)
 		toolbar2.addWidget(powslider)
 		LogLabel = QtGui.QLabel(" Semi-Log ")
 		toolbar2.addWidget(LogLabel)
 		toolbar2.addSeparator ()
 		
-		PColLabel = QtGui.QLabel(" Phase colours ")
-		toolbar2.addWidget(PColLabel)
+		# PColLabel = QtGui.QLabel(" Phase colours ")
+		# toolbar2.addWidget(PColLabel)
 		toolbar2.addWidget(PColCombo)
 		toolbar2.addSeparator ()
 		toolbar2.addWidget(SFRcb)
@@ -553,8 +552,7 @@ def main():
 	while(Running):
 		app.processEvents()
 		qcw.repaint()
-		if(Playing and wf):
-			
+		if(Playing and wf):#if playing and a valid file is loaded
 			play()
 		else:
 			sleep(0.1)
