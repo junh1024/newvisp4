@@ -51,7 +51,7 @@ def init1():
 	maxarray=[0]*(bufsize/2)#for store ampli
 	prevmaxarray=[0]*(bufsize/2)#for store ampli
 	prevphaarray=[0]*(bufsize/2)#for store ampli
-	# bmw=blackman(bufsize)
+	
 	p = PyAudio() #make a pyaudio
 
 def loadfile(file):
@@ -78,7 +78,7 @@ def play():
 	
 	L_temp=0
 	R_temp=0
-
+	
 	# ang=(ang+5)%360
 	data = wf.readframes(bufsize)
 	if(data==''):#this usually means EOF
@@ -91,6 +91,8 @@ def play():
 	else:
 		datalen= len(data)/4
 	# print datalen
+	
+	# bmw=blackman(datalen)
 	
 	L=[0]*datalen#for store L ch samples
 	Lw=[0]*datalen#windowed version of L
@@ -137,6 +139,10 @@ def play():
 	for i in xrange(0,datalen):
 		Lw[i]=L[i]*(1-((abs((datalen/2)-0.5-i))/((datalen/2)-0.5)))#apply triangle window
 		Rw[i]=R[i]*(1-((abs((datalen/2)-0.5-i))/((datalen/2)-0.5)))
+
+	# Lw=L*bmw
+	# Rw=R*bmw
+	
 	# outfft=fft(maxarray)
 	
 	Lfft=fft(Lw)#compute FFT of windowed samples
