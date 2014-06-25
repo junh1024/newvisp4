@@ -5,6 +5,7 @@
 
 from sys import argv,exit
 
+
 from PyQt4 import QtGui, QtCore,Qt
 
 import decoder
@@ -33,6 +34,9 @@ Playing=False
 # print playing.value
 
 psyco.full()
+
+
+
 
 def init1():
 	global bufsize, wf, p,  ang,volume,datalen,maxarray,phaarray,prevmaxarray,prevphaarray
@@ -472,7 +476,7 @@ class Example(QtGui.QMainWindow):
 		LinearLabel = QtGui.QLabel(" Linear ")
 		toolbar2.addWidget(LinearLabel)
 		toolbar2.addWidget(powslider)
-		LogLabel = QtGui.QLabel(" Semi-Log ")
+		LogLabel = QtGui.QLabel(" Flat Log ")
 		toolbar2.addWidget(LogLabel)
 		toolbar2.addSeparator ()
 		
