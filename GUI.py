@@ -1,17 +1,19 @@
-﻿# http://www.qtcentre.org/threads/41621-Resetting-a-QSlider-with-double-click
+﻿#!/usr/bin/env python
+
+# References
+# http://www.qtcentre.org/threads/41621-Resetting-a-QSlider-with-double-click
 # http://rowinggolfer.blogspot.co.nz/2009/01/implimenting-custom-widget-using-pyqt4.html
 # http://stackoverflow.com/questions/4151637/pyqt4-drag-and-drop-files-into-qlistwidget
 # http://www.qsl.net/d/dl4yhf/speclab/specdisp.htm
 
-from sys import argv,exit
+from sys import argv, exit
 
-
-from PyQt4 import QtGui, QtCore,Qt
+from PyQt4 import QtGui, QtCore, Qt
 
 import decoder
 import psyco
 from struct import pack, unpack
-from math import sin,cos,radians,log10,pow
+from math import sin, cos, radians, log10, pow
 
 from pyaudio import PyAudio
 from cStringIO import StringIO
