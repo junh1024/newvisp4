@@ -93,10 +93,10 @@ def play():
 		loadfile(currentfilepath)
 		return
 	
-	if 	wf.getnchannels() ==1:
-		datalen= len(data)/2
-	else:
-		datalen= len(data)/4
+	# if 	wf.getnchannels() ==1:
+		# datalen= len(data)/2
+	# else:
+	datalen= len(data)/4
 	# print datalen
 	
 	# bmw=blackman(datalen)
@@ -159,54 +159,54 @@ def play():
 		Lpha=absolute (Lfft)#extract angle data from FFT
 		Rpha=absolute (Rfft)
 		for i in xrange(0,datalen/2): #compute phase apply phase ballistics
-			phaarray[i]=(((Rpha[i]-Lpha[i])/(Rpha[i]+Lpha[i]))*0.1 )+ (prevphaarray[i]*0.9) #pha now stores the pan actually.
+			phaarray[i]=(((Rpha[i]-Lpha[i])/(Rpha[i]+Lpha[i]))*0.5 )+ (prevphaarray[i]*0.5) #pha now stores the pan actually.
 			prevphaarray[i]=phaarray[i]
 			
 	
 
 
 	
-	for i in xrange(0,datalen/2): #compute fft
-		ffttemp[i]=max ( abs(Lfft[i].real), abs(Rfft[i].real) ) #get the maximum of two channels' FFT
-		try:
-			ffttemp[i]=10*log10(ffttemp[i]/float(datalen)) +40#scale by the number of points so that the magnitude does not depend on the length of FFT, he power in decibels by taking 10*log10, +40 so shouldn't be -ve values at 16bit
-		except:
-			pass
+	# for i in xrange(0,datalen/2): #compute fft
+		# ffttemp[i]=max ( abs(Lfft[i].real), abs(Rfft[i].real) ) #get the maximum of two channels' FFT
+		# try:
+			# ffttemp[i]=10*log10(ffttemp[i]/float(datalen)) +40#scale by the number of points so that the magnitude does not depend on the length of FFT, he power in decibels by taking 10*log10, +40 so shouldn't be -ve values at 16bit
+		# except:
+			# pass
 	#algorithms for applying ballistics
-	if ballisticsmode ==  "1-way variable decay":#1wvd-decay increases with frequency
-		ballisticscoefficient=[0]*(datalen/2)
-		for i in xrange(0,datalen/2):
-			ballisticscoefficient[i]=1.2+(i*2/(datalen/2))
+	# if ballisticsmode ==  "1-way variable decay":#1wvd-decay increases with frequency
+		# ballisticscoefficient=[0]*(datalen/2)
+		# for i in xrange(0,datalen/2):
+			# ballisticscoefficient[i]=1.2+(i*2/(datalen/2))
 			
-		for i in xrange(0,datalen/2):
-			if ffttemp[i]<(prevmaxarray[i]-ballisticscoefficient[i]):
-				maxarray[i]=prevmaxarray[i]-ballisticscoefficient[i]
-			else:
-				maxarray[i]=ffttemp[i]
-			prevmaxarray[i]=maxarray[i]
+		# for i in xrange(0,datalen/2):
+			# if ffttemp[i]<(prevmaxarray[i]-ballisticscoefficient[i]):
+				# maxarray[i]=prevmaxarray[i]-ballisticscoefficient[i]
+			# else:
+				# maxarray[i]=ffttemp[i]
+			# prevmaxarray[i]=maxarray[i]
 		
-	elif ballisticsmode =="1-way fixed decay":#1wfd-decay is doesn't vary with frequency
-		for i in xrange(0,datalen/2):
-			if ffttemp[i]<(prevmaxarray[i]-1.2):
-				maxarray[i]=prevmaxarray[i]-1.2
-			else:
-				maxarray[i]=ffttemp[i]
-			prevmaxarray[i]=maxarray[i]
+	# elif ballisticsmode =="1-way fixed decay":#1wfd-decay is doesn't vary with frequency
+		# for i in xrange(0,datalen/2):
+			# if ffttemp[i]<(prevmaxarray[i]-1.2):
+				# maxarray[i]=prevmaxarray[i]-1.2
+			# else:
+				# maxarray[i]=ffttemp[i]
+			# prevmaxarray[i]=maxarray[i]
 			
-	elif ballisticsmode =="2-way average":
-		for i in xrange(0,datalen/2):
-			maxarray[i]=(prevmaxarray[i]+ffttemp[i])/2 #average with 1 previous reference
-			prevmaxarray[i]=ffttemp[i]
+	# elif ballisticsmode =="2-way average":
+		# for i in xrange(0,datalen/2):
+			# maxarray[i]=(prevmaxarray[i]+ffttemp[i])/2 #average with 1 previous reference
+			# prevmaxarray[i]=ffttemp[i]
 		
-	elif ballisticsmode =="infinite maximum":
-		for i in xrange(0,datalen/2):
-			if ffttemp[i]>(prevmaxarray[i]): #infinite maximum
-				maxarray[i]=ffttemp[i]
-			prevmaxarray[i]=maxarray[i]
-	else:
-		for i in xrange(0,datalen/2): #none
-			maxarray[i]=ffttemp[i]
-			prevmaxarray[i]=maxarray[i]
+	# elif ballisticsmode =="infinite maximum":
+		# for i in xrange(0,datalen/2):
+			# if ffttemp[i]>(prevmaxarray[i]): #infinite maximum
+				# maxarray[i]=ffttemp[i]
+			# prevmaxarray[i]=maxarray[i]
+	# else:
+		# for i in xrange(0,datalen/2): #none
+			# maxarray[i]=ffttemp[i]
+			# prevmaxarray[i]=maxarray[i]
 
 		
 		# if ffttemp>(prevmaxarray[i]+3): #fixed-decay ballistics
@@ -242,8 +242,8 @@ class SpectrumWidget(QtGui.QWidget):
 		qp.begin(self)
 		# qp.setRenderHint(QtGui.QPainter.Antialiasing) #slow as balls
 		self.drawBackground(qp)
-		if(wf):#if a file is loaded, scale lines are drawn
-			self.drawScale(qp)
+		# if(wf):#if a file is loaded, scale lines are drawn
+			# self.drawScale(qp)
 		self.drawLines(qp)
 		qp.end()
 
@@ -300,48 +300,48 @@ class SpectrumWidget(QtGui.QWidget):
 		qp.setPen(apen)
 
 		
-		if phasetext == "none":
-			for i in xrange(0,datalen/2):
-				x=float(i)
-				transformedindex=int((pow(x,power)/pow(datalen/2,power))*datalen/2 ) #index for FFT array, compensated for scale slider
-				p1=QtCore.QPointF((x/(datalen/2))*w,h)
-				p2=QtCore.QPointF((x/(datalen/2))*w,h-(maxarray[transformedindex]/80)*h)
-				qp.drawLine(p1,p2)
-			
-		elif phasetext == "magnified average":
-		
-			total=0 #average all the phases of all frequencies and make the average larger
-			for i in xrange(0,datalen/2):
-				total+=phaarray[i]
-			total=(total)*4/datalen
-			
-			apen.setColor(QtGui.QColor(150-(total*1),200-(total*8),100-(total*8)))
-			qp.setPen(apen)
-		
-			for i in xrange(0,datalen/2):
-				x=float(i)
-				transformedindex=int((pow(x,power)/pow(datalen/2,power))*datalen/2 )
-				
-				p1=QtCore.QPointF((x/(datalen/2))*w,h)
-				p2=QtCore.QPointF((x/(datalen/2))*w,h-(maxarray[transformedindex]/80)*h)
-				qp.drawLine(p1,p2)
-		else:
-			for i in xrange(0,datalen/2):
-				x=float(i)
-				
-				thecolor= QtGui.QColor()
-				thecolor.setHslF(x/(datalen/2),1,0.5,0.1)
-
-				apen.setColor(thecolor) #phase colours
-				apen.setWidthF(16)
-				qp.setPen(apen)
-				
-				apoint=QtCore.QPointF(((phaarray[i])*w*0.5)+(0.5*w),h/2)
-				qp.drawPoint(apoint)
-				# qp.drawPoint(QtCore.QPointF(100,100))
-				# print "drawing"
-				# qp.drawPoint
+		# if phasetext == "none":
+			# for i in xrange(0,datalen/2):
+				# x=float(i)
+				# transformedindex=int((pow(x,power)/pow(datalen/2,power))*datalen/2 ) #index for FFT array, compensated for scale slider
+				# p1=QtCore.QPointF((x/(datalen/2))*w,h)
+				# p2=QtCore.QPointF((x/(datalen/2))*w,h-(maxarray[transformedindex]/80)*h)
 				# qp.drawLine(p1,p2)
+			
+		# elif phasetext == "magnified average":
+		
+			# total=0 #average all the phases of all frequencies and make the average larger
+			# for i in xrange(0,datalen/2):
+				# total+=phaarray[i]
+			# total=(total)*4/datalen
+			
+			# apen.setColor(QtGui.QColor(150-(total*1),200-(total*8),100-(total*8)))
+			# qp.setPen(apen)
+		
+			# for i in xrange(0,datalen/2):
+				# x=float(i)
+				# transformedindex=int((pow(x,power)/pow(datalen/2,power))*datalen/2 )
+				
+				# p1=QtCore.QPointF((x/(datalen/2))*w,h)
+				# p2=QtCore.QPointF((x/(datalen/2))*w,h-(maxarray[transformedindex]/80)*h)
+				# qp.drawLine(p1,p2)
+		# else:
+		for i in xrange(0,datalen/2):
+			x=float(i)
+			
+			thecolor= QtGui.QColor()
+			thecolor.setHslF((x/(datalen/2)),1.0,0.5,0.1)
+
+			apen.setColor(thecolor) #phase colours
+			apen.setWidthF(16)
+			qp.setPen(apen)
+			
+			apoint=QtCore.QPointF(((phaarray[i])*w*0.5)+(0.5*w),h/2)
+			qp.drawPoint(apoint)
+			# qp.drawPoint(QtCore.QPointF(100,100))
+			# print "drawing"
+			# qp.drawPoint
+			# qp.drawLine(p1,p2)
 
 
 class Example(QtGui.QMainWindow):
